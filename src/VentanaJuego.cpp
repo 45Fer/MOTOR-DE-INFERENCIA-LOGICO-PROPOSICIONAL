@@ -1,5 +1,6 @@
 #include "VentanaJuego.h"
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 
 namespace {
@@ -30,6 +31,7 @@ const float INTERVALO_ACEITE_MAXIMO = 9.0f;
 
 VentanaJuego::VentanaJuego()
     : ventana_(1280, 720, "Tamagotchi - Taller del carro"),
+    monitor_(640, 500, "Monitor de estados"),
     texturaFondo_(), fondo_(), texturaAvatar_(), avatar_(),
     texturaReposo_(), texturasCaminar_(), texturasCarga_(),
     texturasDormir_(), texturasMorir_(), texturasEnfermar_(),
@@ -90,6 +92,8 @@ int VentanaJuego::ejecutar() {
         const float deltaTiempo = reloj.restart().asSeconds();
         sf::Event evento{};
 
+        procesarEventosMonitor();
+
         while (ventana_.procesarEvento(evento)) {
             if (evento.type == sf::Event::Closed) {
                 musicaAcelerando_.stop();
@@ -128,6 +132,7 @@ int VentanaJuego::ejecutar() {
             ventana_.limpiar();
             pintarPantallaInicio();
             ventana_.mostrar();
+            pintarMonitor();
             continue;
         }
 
@@ -167,8 +172,164 @@ int VentanaJuego::ejecutar() {
         ventana_.obtenerVentana().draw(botonApagar_);
         ventana_.obtenerVentana().draw(botonLimpiarAceite_);
         ventana_.mostrar();
+
+        if (monitor_.estaAbierta()) {
+            pintarMonitor();
+        }
+    }
+    if (monitor_.estaAbierta()) {
+        monitor_.obtenerVentana().close();
     }
     return 0;
+}
+
+VentanaJuego::EstadoMaquina VentanaJuego::obtenerEstadoMaquina() const {
+    if (enPantallaInicio_) {
+        return EstadoMaquina::INICIO;
+    }
+    if (muriendo_) {
+        return EstadoMaquina::MURIENDO;
+    }
+    if (apagado_) {
+        return EstadoMaquina::APAGADO;
+    }
+    if (recargando_) {
+        return EstadoMaquina::RECARGANDO;
+    }
+
+    const bool necesitaAtencion = sueno_ <= 10.0f || felicidad_ < 25.0f;
+    if (necesitaAtencion) {
+        return EstadoMaquina::ENFERMO;
+    }
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::A) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::D)) {
+        return EstadoMaquina::CAMINANDO;
+    }
+    return EstadoMaquina::REPOSO;
+}
+
+const char* VentanaJuego::nombreEstado(EstadoMaquina estado) const {
+    switch (estado) {
+    case EstadoMaquina::INICIO: return "INICIO";
+    case EstadoMaquina::REPOSO: return "REPOSO";
+    case EstadoMaquina::CAMINANDO: return "CAMINANDO";
+    case EstadoMaquina::RECARGANDO: return "RECARGANDO";
+    case EstadoMaquina::APAGADO: return "APAGADO";
+    case EstadoMaquina::ENFERMO: return "ENFERMO";
+    case EstadoMaquina::MURIENDO: return "MURIENDO";
+    }
+    return "DESCONOCIDO";
+}
+
+void VentanaJuego::procesarEventosMonitor() {
+    if (!monitor_.estaAbierta()) {
+        return;
+    }
+
+    sf::Event evento{};
+    while (monitor_.procesarEvento(evento)) {
+        if (evento.type == sf::Event::Closed) {
+            monitor_.obtenerVentana().close();
+        }
+    }
+}
+
+void VentanaJuego::pintarMonitor() {
+    const EstadoMaquina estadoActual = obtenerEstadoMaquina();
+    sf::RenderWindow& ventanaMonitor = monitor_.obtenerVentana();
+    ventanaMonitor.clear(sf::Color(24, 29, 38));
+
+    sf::Text titulo("MAQUINA DE ESTADOS", fuente_);
+    titulo.setCharacterSize(22);
+    titulo.setFillColor(sf::Color(245, 196, 81));
+    titulo.setPosition(22.0f, 16.0f);
+    ventanaMonitor.draw(titulo);
+
+    sf::Text actual("ESTADO ACTUAL: ", fuente_);
+    actual.setCharacterSize(18);
+    actual.setFillColor(sf::Color(210, 218, 230));
+    actual.setPosition(350.0f, 19.0f);
+    ventanaMonitor.draw(actual);
+
+    sf::Text nombreActual(nombreEstado(estadoActual), fuente_);
+    nombreActual.setCharacterSize(18);
+    nombreActual.setFillColor(sf::Color(118, 224, 172));
+    nombreActual.setPosition(505.0f, 19.0f);
+    ventanaMonitor.draw(nombreActual);
+
+    const EstadoMaquina estados[] = {
+        EstadoMaquina::INICIO, EstadoMaquina::REPOSO,
+        EstadoMaquina::CAMINANDO, EstadoMaquina::RECARGANDO,
+        EstadoMaquina::APAGADO, EstadoMaquina::ENFERMO,
+        EstadoMaquina::MURIENDO
+    };
+
+    const sf::Vector2f posiciones[] = {
+        sf::Vector2f(210.0f, 70.0f), sf::Vector2f(210.0f, 145.0f),
+        sf::Vector2f(430.0f, 145.0f), sf::Vector2f(75.0f, 240.0f),
+        sf::Vector2f(345.0f, 240.0f), sf::Vector2f(75.0f, 335.0f),
+        sf::Vector2f(345.0f, 335.0f)
+    };
+
+    const int transiciones[][2] = {
+        {0, 1}, {1, 2}, {2, 1}, {1, 3}, {3, 1},
+        {1, 4}, {4, 1}, {1, 5}, {5, 1}, {5, 6}, {6, 0}
+    };
+    const auto dibujarFlecha = [&ventanaMonitor, &posiciones](int indiceOrigen,
+                                                               int indiceDestino) {
+        const sf::Vector2f centroOrigen =
+            posiciones[indiceOrigen] + sf::Vector2f(80.0f, 20.0f);
+        const sf::Vector2f centroDestino =
+            posiciones[indiceDestino] + sf::Vector2f(80.0f, 20.0f);
+        const sf::Vector2f diferencia = centroDestino - centroOrigen;
+        const float longitud = std::sqrt(
+            diferencia.x * diferencia.x + diferencia.y * diferencia.y);
+        const sf::Vector2f direccion(diferencia.x / longitud,
+                                     diferencia.y / longitud);
+        const float distanciaBorde = std::min(
+            80.0f / std::max(std::abs(direccion.x), 0.0001f),
+            20.0f / std::max(std::abs(direccion.y), 0.0001f));
+        const sf::Vector2f inicio = centroOrigen + direccion * distanciaBorde;
+        const sf::Vector2f fin = centroDestino - direccion * distanciaBorde;
+        const sf::Color colorFlecha(175, 192, 216);
+        sf::Vertex linea[] = {
+            sf::Vertex(inicio, colorFlecha), sf::Vertex(fin, colorFlecha)
+        };
+        ventanaMonitor.draw(linea, 2, sf::Lines);
+
+        const sf::Vector2f perpendicular(-direccion.y, direccion.x);
+        sf::ConvexShape punta;
+        punta.setPointCount(3);
+        punta.setPoint(0, fin);
+        punta.setPoint(1, fin - direccion * 11.0f + perpendicular * 6.0f);
+        punta.setPoint(2, fin - direccion * 11.0f - perpendicular * 6.0f);
+        punta.setFillColor(colorFlecha);
+        ventanaMonitor.draw(punta);
+    };
+    for (const auto& transicion : transiciones) {
+        dibujarFlecha(transicion[0], transicion[1]);
+    }
+
+    for (int indice = 0; indice < 7; ++indice) {
+        sf::RectangleShape nodo(sf::Vector2f(160.0f, 40.0f));
+        nodo.setPosition(posiciones[indice]);
+        nodo.setFillColor(estados[indice] == estadoActual
+                               ? sf::Color(43, 139, 102)
+                               : sf::Color(42, 49, 62));
+        nodo.setOutlineThickness(2.0f);
+        nodo.setOutlineColor(estados[indice] == estadoActual
+                                 ? sf::Color(118, 224, 172)
+                                 : sf::Color(100, 113, 132));
+        ventanaMonitor.draw(nodo);
+
+        sf::Text texto(nombreEstado(estados[indice]), fuente_);
+        texto.setCharacterSize(16);
+        texto.setFillColor(sf::Color::White);
+        texto.setPosition(posiciones[indice].x + 14.0f,
+                          posiciones[indice].y + 9.0f);
+        ventanaMonitor.draw(texto);
+    }
+    monitor_.mostrar();
 }
 
 bool VentanaJuego::cargarFondo() {

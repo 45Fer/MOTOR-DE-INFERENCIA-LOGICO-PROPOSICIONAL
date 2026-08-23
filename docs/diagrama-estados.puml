@@ -1,0 +1,20 @@
+@startuml
+' Maquina de estados mostrada en "Monitor de estados"
+[*] --> INICIO
+INICIO --> REPOSO : pulsar START
+
+REPOSO --> CAMINANDO : tecla A o D
+CAMINANDO --> REPOSO : soltar A y D
+
+REPOSO --> RECARGANDO : pulsar recarga
+RECARGANDO --> REPOSO : terminar recarga
+
+REPOSO --> APAGADO : pulsar apagar
+APAGADO --> REPOSO : pulsar apagar
+
+REPOSO --> ENFERMO : sueno <= 10 o felicidad < 25
+ENFERMO --> REPOSO : recuperar necesidades
+ENFERMO --> MURIENDO : necesidades agotadas
+
+MURIENDO --> INICIO : terminar animacion de muerte
+@enduml

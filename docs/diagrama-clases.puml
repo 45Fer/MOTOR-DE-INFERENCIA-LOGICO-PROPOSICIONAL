@@ -10,6 +10,24 @@ skinparam arrow {
 title TAMAGOTCHI AUTO - DIAGRAMA DE CLASES
 Arquitectura implementada (C++ / SFML)
 
+state "Maquina de estados del juego" as Maquina {
+    [*] --> INICIO
+    INICIO --> REPOSO : pulsar START
+    REPOSO --> CAMINANDO : pulsar A o D
+    CAMINANDO --> REPOSO : soltar A y D
+    REPOSO --> RECARGANDO : pulsar gasolina
+    CAMINANDO --> RECARGANDO : pulsar gasolina
+    RECARGANDO --> REPOSO : carga terminada
+    REPOSO --> APAGADO : pulsar apagar
+    CAMINANDO --> APAGADO : pulsar apagar
+    APAGADO --> REPOSO : pulsar apagar
+    REPOSO --> ENFERMO : sueno o felicidad baja
+    CAMINANDO --> ENFERMO : sueno o felicidad baja
+    ENFERMO --> MURIENDO : enfermedad maxima o gasolina agotada
+    REPOSO --> MURIENDO : enfermedad maxima o gasolina agotada
+    MURIENDO --> INICIO : animacion terminada
+}
+
 class Juego {
     - experiencia : VentanaJuego
     - tamagotchi : Tamagotchi
@@ -29,6 +47,8 @@ class Juego {
 
 class VentanaJuego {
     - ventana : Ventana
+    - monitor : Ventana
+    - estadoMaquina : EstadoMaquina
     - texturas y sprites : SFML
     - musicaAcelerando : sf::Music
     - musicaArancar : sf::Music
@@ -65,6 +85,19 @@ class VentanaJuego {
     - alternarApagado() : void
     - actualizarMuerte(dt : float) : void
     - iniciarMuerte() : void
+    - obtenerEstadoMaquina() : EstadoMaquina
+    - procesarEventosMonitor() : void
+    - pintarMonitor() : void
+}
+
+enum EstadoMaquina {
+    INICIO
+    REPOSO
+    CAMINANDO
+    RECARGANDO
+    APAGADO
+    ENFERMO
+    MURIENDO
 }
 
 class Tamagotchi {
@@ -206,6 +239,9 @@ Juego *-- AutoRender
 Juego *-- FondoPantalla
 
 VentanaJuego *-- Ventana
+VentanaJuego *-- Ventana : ventana principal
+VentanaJuego *-- Ventana : monitor de estados
+VentanaJuego --> EstadoMaquina
 Tamagotchi --> EstadoTamagotchi
 Tamagotchi ..> Constantes
 AutoRender ..> Tamagotchi

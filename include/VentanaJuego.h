@@ -12,6 +12,16 @@ public:
     int ejecutar();
 
 private:
+    enum class EstadoMaquina {
+        INICIO,
+        REPOSO,
+        CAMINANDO,
+        RECARGANDO,
+        APAGADO,
+        ENFERMO,
+        MURIENDO
+    };
+
     bool cargarFondo();
     bool cargarAvatar();
     bool cargarAudio();
@@ -39,8 +49,13 @@ private:
     void alternarApagado();
     void actualizarMuerte(float deltaTiempo);
     void iniciarMuerte();
+    EstadoMaquina obtenerEstadoMaquina() const;
+    const char* nombreEstado(EstadoMaquina estado) const;
+    void procesarEventosMonitor();
+    void pintarMonitor();
 
     Ventana ventana_;
+    Ventana monitor_;
     sf::Texture texturaFondo_;
     sf::Sprite fondo_;
     sf::Texture texturaAvatar_;
