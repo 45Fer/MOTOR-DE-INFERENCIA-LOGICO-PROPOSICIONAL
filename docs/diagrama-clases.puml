@@ -1,259 +1,78 @@
-@startuml diagrama_clases_tamagotchi
-!theme plain
-skinparam backgroundColor white
-skinparam classBackgroundColor #E6F3FF
-skinparam classBorderColor #2E86AB
-skinparam arrow {
-    Color #2E86AB
+@startuml
+title Motor de inferencia lógico-proposicional
+
+enum FormulaKind {
+  Atom
+  Not
+  And
+  Or
+  Implies
+  Iff
 }
 
-title TAMAGOTCHI AUTO - DIAGRAMA DE CLASES
-Arquitectura implementada (C++ / SFML)
-
-state "Maquina de estados del juego" as Maquina {
-    [*] --> INICIO
-    INICIO --> REPOSO : pulsar START
-    REPOSO --> CAMINANDO : pulsar A o D
-    CAMINANDO --> REPOSO : soltar A y D
-    REPOSO --> RECARGANDO : pulsar gasolina
-    CAMINANDO --> RECARGANDO : pulsar gasolina
-    RECARGANDO --> REPOSO : carga terminada
-    REPOSO --> APAGADO : pulsar apagar
-    CAMINANDO --> APAGADO : pulsar apagar
-    APAGADO --> REPOSO : pulsar apagar
-    REPOSO --> ENFERMO : sueno o felicidad baja
-    CAMINANDO --> ENFERMO : sueno o felicidad baja
-    ENFERMO --> MURIENDO : enfermedad maxima o gasolina agotada
-    REPOSO --> MURIENDO : enfermedad maxima o gasolina agotada
-    MURIENDO --> INICIO : animacion terminada
+class Formula {
+  - kind_ : FormulaKind
+  - atomName_ : string
+  - left_ : Ptr
+  - right_ : Ptr
+  + atom(name : string) : Ptr
+  + unary(kind : FormulaKind, operand : Ptr) : Ptr
+  + binary(kind : FormulaKind, left : Ptr, right : Ptr) : Ptr
+  + evaluate(model : map<string, bool>) : bool
+  + collectAtoms(atoms : set<string>) : void
+  + toString() : string
 }
 
-class Juego {
-    - experiencia : VentanaJuego
-    - tamagotchi : Tamagotchi
-    - temporizador : Temporizador
-    - musica : Musica
-    - botones : Botones
-    - audio : Audio
-    - autoRender : AutoRender
-    - fondoPantalla : FondoPantalla
-    - gameOver : bool
-    __
-    + Juego()
-    + Jugar() : void
-    + ActualizarEstado() : void
-    + MostrarMenuPrincipal() : void
+class FormulaParser {
+  + parse(expression : string) : Formula::Ptr
 }
 
-class VentanaJuego {
-    - ventana : Ventana
-    - monitor : Ventana
-    - estadoMaquina : EstadoMaquina
-    - texturas y sprites : SFML
-    - musicaAcelerando : sf::Music
-    - musicaArancar : sf::Music
-    - musicaLlenar : sf::Music
-    - musicaPantallaInicio : sf::Music
-    - musicaPartida : sf::Music
-    - gasolina : float
-    - sueno : float
-    - felicidad : float
-    - enfermedad : float
-    - caminando : bool
-    - recargando : bool
-    - apagado : bool
-    - muriendo : bool
-    - manchasAceite : vector<Sprite>
-    __
-    + VentanaJuego()
-    + crear() : bool
-    + ejecutar() : int
-    - actualizarAnimacion(dt : float) : void
-    - actualizarAudio() : void
-    - actualizarEstado(dt : float) : void
-    - actualizarGasolina(dt : float) : void
-    - actualizarAceite(dt : float) : void
-    - pintarFondo() : void
-    - pintarAvatar() : void
-    - pintarGasolina() : void
-    - pintarEstado() : void
-    - pintarAceite() : void
-    - pintarPantallaInicio() : void
-    - iniciarRecarga() : void
-    - actualizarRecarga(dt : float) : void
-    - actualizarApagado(dt : float) : void
-    - alternarApagado() : void
-    - actualizarMuerte(dt : float) : void
-    - iniciarMuerte() : void
-    - obtenerEstadoMaquina() : EstadoMaquina
-    - procesarEventosMonitor() : void
-    - pintarMonitor() : void
+class NaturalLanguageTranslator {
+  + translate(sentence : string) : string
+  - normalize(text : string) : string
 }
 
-enum EstadoMaquina {
-    INICIO
-    REPOSO
-    CAMINANDO
-    RECARGANDO
-    APAGADO
-    ENFERMO
-    MURIENDO
+class SemanticTree {
+  - formula_ : Formula::Ptr
+  + render() : string
 }
 
-class Tamagotchi {
-    - estadoActual : EstadoTamagotchi
-    - nivelGasolina : int = 100
-    - nivelAceite : int = 100
-    - nivelLimpieza : int = 100
-    __
-    + Tamagotchi()
-    + CargarGasolina() : void
-    + RellenarAceite() : void
-    + Apagar() : void
-    + LimpiarDerrame() : void
-    + Desbielar() : void
-    + Acelerar() : void
-    + Derramar() : void
-    + Yonquear() : void
-    + VerificarAlertas() : void
-    + ObtenerEstado() : EstadoTamagotchi
-    + ObtenerNivelGasolina() : int
-    + ObtenerNivelAceite() : int
-    + ObtenerNivelLimpieza() : int
+struct ParsedRule {
+  + original : string
+  + translated : string
+  + formula : Formula::Ptr
 }
 
-enum EstadoTamagotchi {
-    REPOSO
-    ACELERADO
-    YONQUEO
-    DESBIELADO
+struct ModelReport {
+  + atoms : vector<string>
+  + models : vector<map<string, bool>>
+  + oneHotModels : vector<vector<bool>>
+  + satisfiable() : bool
+  + toString() : string
 }
 
-class Temporizador {
-    - tiempoCarga : float
-    - tiempoDesbielo : float
-    - tiempoDerramo : float
-    __
-    + Temporizador()
-    + IniciarConteo() : void
-    + Reiniciar() : void
-    + ActualizarTiempos(dt : float) : void
-    + ObtenerTiempoCarga() : float
-    + ObtenerTiempoDesbielo() : float
-    + ObtenerTiempoDerramo() : float
+class ModelEvaluator {
+  + evaluate(formulas : vector<Formula::Ptr>) : ModelReport
 }
 
-class Ventana {
-    - ventana : sf::RenderWindow
-    __
-    + Ventana(ancho : int, alto : int, titulo : string)
-    + estaAbierta() : bool
-    + limpiar() : void
-    + mostrar() : void
-    + procesarEvento(evento : sf::Event&) : bool
-    + obtenerVentana() : sf::RenderWindow&
+class LogicEngine {
+  - translator_ : NaturalLanguageTranslator
+  - parser_ : FormulaParser
+  - rules_ : vector<ParsedRule>
+  + addRule(rule : string) : ParsedRule
+  + evaluate() : ModelReport
+  + semanticTree() : string
+  + rules() : vector<ParsedRule>
 }
 
-class Musica {
-    - musica : sf::Music
-    __
-    + Musica()
-    + Musica(rutaArchivo : string)
-    + Cargar(rutaArchivo : string) : bool
-    + ReproducirAcelerador() : void
-    + ReproducirGasolina() : void
-    + Detener() : void
-    + Pausar() : void
-    + EstablecerVolumen(volumen : float) : void
-}
-
-class Audio {
-    - musica : sf::Music
-    __
-    + Audio()
-    + Audio(rutaArchivo : string)
-    + Cargar(rutaArchivo : string) : bool
-    + Reproducir() : void
-    + VerificarSiEstaReproduciendo() : bool
-    + EstablecerVolumen(volumen : float) : void
-}
-
-class Botones {
-    - zonaDormir : sf::FloatRect
-    - zonaLimpiar : sf::FloatRect
-    - zonaCargar : sf::FloatRect
-    __
-    + Botones()
-    + ClickDormir() : void
-    + ClickLimpiar() : void
-    + ClickCargar() : void
-    + ProcesarEvento(evento : sf::Event&) : AccionBoton
-    + EstablecerZonas(dormir, limpiar, cargar) : void
-}
-
-enum AccionBoton {
-    Ninguna
-    CargarGasolina
-    LimpiarDerrame
-    Dormir
-    Acelerar
-    Salir
-}
-
-class AutoRender {
-    - fondo : FondoPantalla*
-    - tamagotchi : Tamagotchi*
-    __
-    + AutoRender()
-    + DibujarFondo(ventana : sf::RenderWindow&) : void
-    + DibujarAuto(ventana : sf::RenderWindow&, estado : EstadoTamagotchi) : void
-    + DibujarBarrasEstado(ventana : sf::RenderWindow&, gasolina : int, aceite : int) : void
-    + EstablecerFondo(fondo : FondoPantalla*) : void
-    + EstablecerTamagotchi(tamagotchi : Tamagotchi*) : void
-}
-
-class FondoPantalla {
-    - textura : sf::Texture
-    - sprite : sf::Sprite
-    __
-    + FondoPantalla()
-    + Cargar(rutaFondo : string) : bool
-    + Dibujar(ventana : sf::RenderWindow&) : void
-}
-
-class Constantes {
-    {static} WIN_WIDTH : int = 1280
-    {static} WIN_HEIGHT : int = 720
-    {static} MAX_GASOLINA : int = 100
-    {static} MAX_ACEITE : int = 100
-    {static} SCALE : float = 2.5
-}
-
-Juego *-- VentanaJuego
-Juego *-- Tamagotchi
-Juego *-- Temporizador
-Juego *-- Musica
-Juego *-- Botones
-Juego *-- Audio
-Juego *-- AutoRender
-Juego *-- FondoPantalla
-
-VentanaJuego *-- Ventana
-VentanaJuego *-- Ventana : ventana principal
-VentanaJuego *-- Ventana : monitor de estados
-VentanaJuego --> EstadoMaquina
-Tamagotchi --> EstadoTamagotchi
-Tamagotchi ..> Constantes
-AutoRender ..> Tamagotchi
-AutoRender ..> FondoPantalla
-Botones --> AccionBoton
-FondoPantalla ..> Constantes
-
-note right of VentanaJuego
-    Conserva la jugabilidad e interfaz
-    actuales: menú inicial, carga,
-    dormir, enfermedad, muerte,
-    aceite y limpieza.
-end note
+LogicEngine *-- NaturalLanguageTranslator
+LogicEngine *-- FormulaParser
+LogicEngine o-- ParsedRule
+ParsedRule --> Formula
+FormulaParser ..> Formula : crea
+SemanticTree --> Formula
+ModelEvaluator ..> Formula : evalúa
+ModelEvaluator ..> ModelReport : genera
+Formula --> FormulaKind
 
 @enduml

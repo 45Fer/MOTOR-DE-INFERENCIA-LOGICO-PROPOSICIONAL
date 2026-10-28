@@ -1,12 +1,10 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -Iinclude
-
+CXXFLAGS = -std=c++17 -Wall -Wextra -Wpedantic -Iinclude
 SRCDIR = src
 BINDIR = bin
-
 SOURCES = $(wildcard $(SRCDIR)/*.cpp)
 OBJECTS = $(patsubst $(SRCDIR)/%.cpp,$(BINDIR)/%.o,$(SOURCES))
-TARGET = $(BINDIR)/tamagotchi.exe
+TARGET = $(BINDIR)/inferencia.exe
 
 all: $(BINDIR) $(TARGET)
 
@@ -17,7 +15,7 @@ $(BINDIR)/%.o: $(SRCDIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(TARGET): $(OBJECTS)
-	$(CXX) $(CXXFLAGS) -o $@ $^ -lsfml-graphics -lsfml-window -lsfml-system -lsfml-audio
+	$(CXX) $(CXXFLAGS) -o $@ $^
 
 run: all
 	./$(TARGET)
