@@ -103,11 +103,26 @@ Modelos: 1
 { p=V, q=V }  One Hot: [1, 1]
 ```
 
-La interfaz solicita las frases directamente en la terminal. Cada frase debe
-escribirse en su propia línea; `fin` también debe escribirse solo en su propia
-línea. El programa muestra la interpretación de cada frase, informa si hubo
-un error de entrada y, al finalizar, separa claramente el resultado, los
-modelos y el árbol semántico.
+La interfaz gráfica solicita las frases en un editor multilinea. Cada frase
+debe escribirse en su propia línea. El programa informa si el conjunto es
+compatible, muestra los modelos válidos y presenta el árbol semántico.
+
+## Interfaz gráfica nativa en C++
+
+El proyecto incluye una interfaz de escritorio nativa Win32 implementada
+completamente en C++. La ventana utiliza directamente `LogicEngine`, por lo que
+no hay servidor, Python, HTML, JavaScript ni procesos externos.
+
+Compila y abre la interfaz desde la raíz:
+
+```text
+make
+make gui
+```
+
+En Windows también puedes ejecutar `bin/inferencia.exe` directamente. La
+ventana permite escribir varias premisas, analizarlas, consultar el veredicto,
+los modelos válidos, el vector One Hot y el árbol semántico.
 
 ## Memoria de frases aprendidas
 
@@ -147,7 +162,7 @@ Desde la raíz del proyecto:
 
 ```text
 make
-make run
+make gui
 ```
 
 En Windows, si la consola muestra caracteres como `?` en lugar de vocales

@@ -1,5 +1,6 @@
 CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -Wpedantic -Iinclude
+LDFLAGS = -mwindows -luser32 -lgdi32 -lcomctl32
 SRCDIR = src
 BINDIR = bin
 SOURCES = $(wildcard $(SRCDIR)/*.cpp)
@@ -15,9 +16,12 @@ $(BINDIR)/%.o: $(SRCDIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(TARGET): $(OBJECTS)
-	$(CXX) $(CXXFLAGS) -o $@ $^
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 run: all
+	./$(TARGET)
+
+gui: all
 	./$(TARGET)
 
 clean:
