@@ -6,6 +6,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <functional>
 
 namespace {
 constexpr int InputId = 1001;
@@ -14,12 +15,63 @@ constexpr int ClearId = 1003;
 constexpr int ResultId = 1004;
 constexpr int StatusId = 1005;
 constexpr int AtomsId = 1006;
+constexpr int DiagramId = 1007;
+constexpr int ShowDiagramId = 1008;
+constexpr int DiagramTitleId = 1009;
+constexpr int BackDiagramId = 1010;
+constexpr int AtomsViewId = 1011;
+constexpr int RulesViewId = 1012;
 
 const char* const learnedPhrasesPath = "data/frases_aprendidas.txt";
 HFONT bodyFont;
 HFONT headingFont;
 HFONT smallFont;
+HFONT treeFont;
 HBRUSH backgroundBrush;
+std::vector<Formula::Ptr> diagramFormulas;
+std::vector<std::string> diagramOriginals;
+std::map<std::string, std::string> diagramLabels;
+HWND diagramWindow = nullptr;
+bool diagramMode = false;
+bool treeResultMode = false;
+std::string lastResult;
+std::string semanticTreeResult;
+std::string atomsResult;
+std::string rulesResult;
+
+void setDiagramView(HWND window, bool showDiagram) {
+    diagramMode = showDiagram;
+    if (showDiagram) {
+        EnumChildWindows(
+            window,
+            [](HWND child, LPARAM) -> BOOL {
+                ShowWindow(child, SW_HIDE);
+                return TRUE;
+            },
+            0);
+        MoveWindow(GetDlgItem(window, DiagramTitleId), 44, 28, 300, 30, TRUE);
+        MoveWindow(GetDlgItem(window, DiagramId), 44, 70, 700, 780, TRUE);
+        MoveWindow(GetDlgItem(window, BackDiagramId), 610, 28, 134, 32, TRUE);
+        ShowWindow(GetDlgItem(window, DiagramTitleId), SW_SHOW);
+        ShowWindow(GetDlgItem(window, DiagramId), SW_HIDE);
+        ShowWindow(GetDlgItem(window, BackDiagramId), SW_SHOW);
+        BringWindowToTop(GetDlgItem(window, DiagramId));
+        InvalidateRect(window, nullptr, TRUE);
+        UpdateWindow(window);
+    } else {
+        EnumChildWindows(
+            window,
+            [](HWND child, LPARAM) -> BOOL {
+                ShowWindow(child, SW_SHOW);
+                return TRUE;
+            },
+            0);
+        ShowWindow(GetDlgItem(window, DiagramTitleId), SW_HIDE);
+        ShowWindow(GetDlgItem(window, DiagramId), SW_HIDE);
+        ShowWindow(GetDlgItem(window, BackDiagramId), SW_HIDE);
+        InvalidateRect(window, nullptr, TRUE);
+    }
+}
 
 std::wstring toWide(const std::string& value) {
     if (value.empty()) return {};
@@ -44,6 +96,26 @@ std::string toUtf8(const std::wstring& value) {
 
 void setText(HWND control, const std::string& value) {
     SetWindowTextW(control, toWide(value).c_str());
+}
+
+void showResultView(HWND window, const std::string& value, bool tree) {
+    HWND resultControl = GetDlgItem(window, ResultId);
+    setText(resultControl, value);
+    SendMessageW(resultControl, WM_SETFONT,
+                 reinterpret_cast<WPARAM>(tree ? treeFont : bodyFont), TRUE);
+    RECT clientArea{};
+    GetClientRect(window, &clientArea);
+    MoveWindow(resultControl, 44, 447,
+               std::max(400, static_cast<int>(clientArea.right) - 88),
+               tree ? std::max(200, static_cast<int>(clientArea.bottom) - 490) : 155,
+               TRUE);
+    SendMessageW(resultControl, EM_SETSEL, 0, 0);
+    SendMessageW(resultControl, EM_SCROLL, SB_TOP, 0);
+    ShowWindow(resultControl, SW_SHOW);
+    ShowWindow(GetDlgItem(window, AtomsId), tree ? SW_HIDE : SW_SHOW);
+    treeResultMode = tree;
+    InvalidateRect(resultControl, nullptr, TRUE);
+    UpdateWindow(resultControl);
 }
 
 std::string getText(HWND control) {
@@ -122,14 +194,56 @@ void analyze(HWND window) {
             appendLine(result, model);
         }
 
-        appendLine(result, "");
-        appendLine(result, "ÁRBOL SEMÁNTICO");
-        for (const auto& rule : engine.rules()) {
-            appendLine(result, "Frase: " + rule.original);
-            appendLine(result, SemanticTree(rule.formula).render(report.atomLabels));
-        }
-
         setText(GetDlgItem(window, ResultId), result);
+        SendMessageW(GetDlgItem(window, ResultId), WM_SETFONT,
+                     reinterpret_cast<WPARAM>(bodyFont), TRUE);
+        lastResult = result;
+        semanticTreeResult =
+            "============================================================\r\n"
+            "                    ARBOL SEMANTICO\r\n"
+            "============================================================\r\n\r\n";
+        for (std::size_t index = 0; index < engine.rules().size(); ++index) {
+            const auto& rule = engine.rules()[index];
+            semanticTreeResult += "REGLA " + std::to_string(index + 1) + "\r\n";
+            semanticTreeResult += "Frase original: " + rule.original + "\r\n";
+            semanticTreeResult += "Estructura:\r\n";
+            semanticTreeResult +=
+                SemanticTree(rule.formula).render(report.atomLabels);
+            semanticTreeResult +=
+                "------------------------------------------------------------\r\n\r\n";
+        }
+        atomsResult = "==================== ATOMOS ====================\r\n\r\n";
+        atomsResult += "Total de atomos: " + std::to_string(report.atoms.size()) + "\r\n\r\n";
+        for (std::size_t index = 0; index < report.atoms.size(); ++index) {
+            const auto label = report.atomLabels.find(report.atoms[index]);
+            atomsResult += std::to_string(index + 1) + ". " + report.atoms[index] +
+                           " = " +
+                           (label == report.atomLabels.end() ? report.atoms[index]
+                                                              : label->second) +
+                           "\r\n";
+        }
+        rulesResult = "==================== REGLAS ====================\r\n\r\n";
+        for (std::size_t index = 0; index < engine.rules().size(); ++index) {
+            const auto& rule = engine.rules()[index];
+            rulesResult += "Regla " + std::to_string(index + 1) + "\r\n";
+            rulesResult += "Original: " + rule.original + "\r\n";
+            rulesResult += "Interpretacion: " +
+                           rule.formula->toLabeledString(report.atomLabels) + "\r\n\r\n";
+        }
+        treeResultMode = false;
+        SetWindowTextW(GetDlgItem(window, AnalyzeId), L"MODELO");
+        SetWindowTextW(GetDlgItem(window, ShowDiagramId), L"ARBOL SEMANTICO");
+        diagramFormulas.clear();
+        diagramOriginals.clear();
+        for (const auto& rule : engine.rules()) {
+            diagramFormulas.push_back(rule.formula);
+            diagramOriginals.push_back(rule.original);
+        }
+        diagramLabels = report.atomLabels;
+        showResultView(window, result, false);
+        setDiagramView(window, false);
+        if (diagramWindow) InvalidateRect(diagramWindow, nullptr, TRUE);
+        InvalidateRect(GetDlgItem(window, DiagramId), nullptr, TRUE);
         std::string atomSummary;
         for (const auto& atom : report.atoms) {
             const auto label = report.atomLabels.find(atom);
@@ -145,6 +259,143 @@ void analyze(HWND window) {
     }
 }
 
+LRESULT CALLBACK diagramProcedure(HWND window, UINT message, WPARAM, LPARAM) {
+    if (message == WM_DESTROY) {
+        if (window == diagramWindow) diagramWindow = nullptr;
+        return 0;
+    }
+    if (message == WM_SIZE) {
+        InvalidateRect(window, nullptr, TRUE);
+        return 0;
+    }
+    if (message != WM_PAINT) return DefWindowProcW(window, message, 0, 0);
+
+    PAINTSTRUCT paint{};
+    HDC dc = BeginPaint(window, &paint);
+    RECT area{};
+    GetClientRect(window, &area);
+    HBRUSH canvasBrush = CreateSolidBrush(RGB(255, 255, 255));
+    FillRect(dc, &area, canvasBrush);
+    DeleteObject(canvasBrush);
+    SetBkMode(dc, TRANSPARENT);
+
+    if (diagramFormulas.empty()) {
+        SelectObject(dc, smallFont);
+        SetTextColor(dc, RGB(129, 145, 153));
+        DrawTextW(dc, L"Analiza tus proposiciones para visualizar el diagrama.",
+                  -1, &area, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        EndPaint(window, &paint);
+        return 0;
+    }
+
+    struct NodePosition {
+        Formula::Ptr formula;
+        int x;
+        int y;
+    };
+    constexpr int nodeWidth = 132;
+    constexpr int nodeHeight = 52;
+    constexpr int levelGap = 74;
+    constexpr int canvasMargin = 82;
+    int currentY = 38;
+
+    auto labelFor = [](const Formula::Ptr& formula) {
+        if (formula->kind() == FormulaKind::Atom) {
+            const auto label = diagramLabels.find(formula->atomName());
+            return label == diagramLabels.end() ? formula->atomName() : label->second;
+        }
+        switch (formula->kind()) {
+        case FormulaKind::Not: return std::string("¬");
+        case FormulaKind::And: return std::string("∧");
+        case FormulaKind::Or: return std::string("∨");
+        case FormulaKind::Implies: return std::string("→");
+        case FormulaKind::Iff: return std::string("↔");
+        default: return std::string();
+        }
+    };
+
+    for (std::size_t ruleIndex = 0; ruleIndex < diagramFormulas.size(); ++ruleIndex) {
+        const Formula::Ptr& root = diagramFormulas[ruleIndex];
+        std::vector<NodePosition> nodes;
+        std::vector<std::pair<int, int>> edges;
+        std::function<int(const Formula::Ptr&, int, int&, int)> layout =
+            [&](const Formula::Ptr& formula, int depth, int& nextLeaf, int leafCount) {
+                const int index = static_cast<int>(nodes.size());
+                nodes.push_back({formula, 0, currentY + depth * levelGap});
+                if (formula->kind() == FormulaKind::Atom) {
+                    const int usableWidth =
+                        std::max(1, static_cast<int>(area.right) - 2 * canvasMargin);
+                    nodes[index].x = canvasMargin +
+                                     (nextLeaf++ * usableWidth) /
+                                         std::max(1, leafCount - 1);
+                    return index;
+                }
+                const int left = layout(formula->left(), depth + 1, nextLeaf, leafCount);
+                int right = -1;
+                if (formula->right())
+                    right = layout(formula->right(), depth + 1, nextLeaf, leafCount);
+                nodes[index].x = right < 0
+                                     ? nodes[left].x
+                                     : (nodes[left].x + nodes[right].x) / 2;
+                edges.push_back({index, left});
+                if (right >= 0) edges.push_back({index, right});
+                return index;
+            };
+            std::function<int(const Formula::Ptr&)> countLeaves =
+                [&](const Formula::Ptr& formula) {
+                    if (formula->kind() == FormulaKind::Atom) return 1;
+                    return countLeaves(formula->left()) +
+                           (formula->right() ? countLeaves(formula->right()) : 0);
+                };
+            int nextLeaf = 0;
+            layout(root, 0, nextLeaf, countLeaves(root));
+
+            SelectObject(dc, smallFont);
+            SetTextColor(dc, RGB(77, 93, 104));
+            std::wstring title = L"Proposición " + std::to_wstring(ruleIndex + 1);
+            TextOutW(dc, 18, currentY - 28, title.c_str(), static_cast<int>(title.size()));
+
+        HPEN edgePen = CreatePen(PS_SOLID, 2, RGB(176, 195, 201));
+        HGDIOBJ oldPen = SelectObject(dc, edgePen);
+        for (const auto& edge : edges) {
+            const auto& parent = nodes[edge.first];
+            const auto& child = nodes[edge.second];
+            MoveToEx(dc, parent.x, parent.y + nodeHeight, nullptr);
+            LineTo(dc, child.x, child.y);
+        }
+        SelectObject(dc, oldPen);
+        DeleteObject(edgePen);
+
+        for (const auto& node : nodes) {
+            RECT box{node.x - nodeWidth / 2, node.y, node.x + nodeWidth / 2,
+                     node.y + nodeHeight};
+            const bool atom = node.formula->kind() == FormulaKind::Atom;
+            const bool rootNode = node.y == currentY;
+            HBRUSH fill = CreateSolidBrush(
+                rootNode ? RGB(246, 119, 108)
+                         : (atom ? RGB(253, 236, 233) : RGB(255, 164, 154)));
+            HPEN border = CreatePen(PS_SOLID, 1, RGB(40, 40, 40));
+            HGDIOBJ oldBrush = SelectObject(dc, fill);
+            HGDIOBJ oldNodePen = SelectObject(dc, border);
+            RoundRect(dc, box.left, box.top, box.right, box.bottom, 12, 12);
+            SelectObject(dc, oldNodePen);
+            SelectObject(dc, oldBrush);
+            DeleteObject(border);
+            DeleteObject(fill);
+
+            std::wstring text = toWide(labelFor(node.formula));
+            SelectObject(dc, smallFont);
+            SetTextColor(dc, rootNode ? RGB(255, 255, 255) : RGB(31, 31, 31));
+            DrawTextW(dc, text.c_str(), -1, &box,
+                      DT_CENTER | DT_VCENTER | DT_WORDBREAK | DT_END_ELLIPSIS);
+        }
+        currentY += std::max(190, 3 * levelGap + nodeHeight + 20);
+    }
+
+    EndPaint(window, &paint);
+    return 0;
+}
+
 void createControls(HWND window) {
     CreateWindowW(L"STATIC", L"LOGICLAB", WS_VISIBLE | WS_CHILD,
                   42, 28, 180, 34, window, nullptr, nullptr, nullptr);
@@ -156,28 +407,158 @@ void createControls(HWND window) {
                   WS_VISIBLE | WS_CHILD, 44, 153, 220, 22, window, nullptr, nullptr, nullptr);
     CreateWindowW(L"EDIT", L"Si una persona estudia, entonces aprende.\r\nUna persona estudia.",
                   WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL |
-                      WS_VSCROLL, 44, 180, 565, 155, window,
+                      ES_AUTOHSCROLL | WS_HSCROLL |
+                      WS_VSCROLL, 44, 180, 920, 155, window,
                   reinterpret_cast<HMENU>(InputId), nullptr, nullptr);
-    CreateWindowW(L"BUTTON", L"ANALIZAR PROPOSICIONES",
-                  WS_VISIBLE | WS_CHILD | BS_OWNERDRAW, 44, 350, 245, 42, window,
+    CreateWindowW(L"BUTTON", L"MODELO",
+                  WS_VISIBLE | WS_CHILD | BS_OWNERDRAW, 44, 350, 180, 42, window,
                   reinterpret_cast<HMENU>(AnalyzeId), nullptr, nullptr);
     CreateWindowW(L"BUTTON", L"LIMPIAR", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                  305, 350, 105, 42, window, reinterpret_cast<HMENU>(ClearId),
+                  975, 180, 105, 42, window, reinterpret_cast<HMENU>(ClearId),
                   nullptr, nullptr);
+    CreateWindowW(L"BUTTON", L"ARBOL SEMANTICO",
+                  WS_VISIBLE | WS_CHILD | BS_OWNERDRAW, 232, 350, 180, 42, window,
+                  reinterpret_cast<HMENU>(ShowDiagramId), nullptr, nullptr);
+    CreateWindowW(L"BUTTON", L"ATOMOS",
+                  WS_VISIBLE | WS_CHILD | BS_OWNERDRAW, 420, 350, 140, 42, window,
+                  reinterpret_cast<HMENU>(AtomsViewId), nullptr, nullptr);
+    CreateWindowW(L"BUTTON", L"REGLAS",
+                  WS_VISIBLE | WS_CHILD | BS_OWNERDRAW, 568, 350, 140, 42, window,
+                  reinterpret_cast<HMENU>(RulesViewId), nullptr, nullptr);
     CreateWindowW(L"STATIC", L"RESULTADO",
                   WS_VISIBLE | WS_CHILD, 44, 420, 160, 22, window, nullptr, nullptr, nullptr);
     CreateWindowW(L"STATIC", L"Listo para analizar",
-                  WS_VISIBLE | WS_CHILD, 440, 420, 250, 22, window,
+                  WS_VISIBLE | WS_CHILD, 780, 420, 300, 22, window,
                   reinterpret_cast<HMENU>(StatusId), nullptr, nullptr);
     CreateWindowW(L"EDIT", L"Tu resultado aparecerá aquí.",
                   WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL |
-                      WS_VSCROLL | ES_READONLY, 44, 447, 700, 300, window,
+                                ES_AUTOHSCROLL | WS_VSCROLL | WS_HSCROLL | ES_READONLY,
+                            44, 447, 1020, 155, window,
                   reinterpret_cast<HMENU>(ResultId), nullptr, nullptr);
+    CreateWindowW(L"STATIC", L"DIAGRAMA SEMÁNTICO",
+                  WS_CHILD, 44, 625, 260, 22, window,
+                  reinterpret_cast<HMENU>(DiagramTitleId), nullptr, nullptr);
+    CreateWindowExW(WS_EX_CLIENTEDGE, L"LogicTreeDiagram", L"",
+                    WS_CHILD, 44, 655, 700, 235, window,
+                    reinterpret_cast<HMENU>(DiagramId), nullptr, nullptr);
+    CreateWindowW(L"BUTTON", L"REGRESAR", WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+                  650, 625, 94, 32, window,
+                  reinterpret_cast<HMENU>(BackDiagramId), nullptr, nullptr);
     CreateWindowW(L"STATIC", L"ÁTOMOS DETECTADOS",
-                  WS_VISIBLE | WS_CHILD, 44, 770, 180, 22, window, nullptr, nullptr, nullptr);
+                  WS_VISIBLE | WS_CHILD, 44, 910, 300, 22, window, nullptr, nullptr, nullptr);
     CreateWindowW(L"STATIC", L"Sin análisis",
-                  WS_VISIBLE | WS_CHILD, 44, 798, 700, 35, window,
+                  WS_VISIBLE | WS_CHILD, 44, 938, 1020, 35, window,
                   reinterpret_cast<HMENU>(AtomsId), nullptr, nullptr);
+}
+
+void paintDiagram(HDC dc, const RECT& area) {
+    HBRUSH canvas = CreateSolidBrush(RGB(255, 255, 255));
+    FillRect(dc, &area, canvas);
+    DeleteObject(canvas);
+    SelectObject(dc, headingFont);
+    SetTextColor(dc, RGB(40, 40, 40));
+    SetBkMode(dc, TRANSPARENT);
+    TextOutW(dc, 36, 20, L"DIAGRAMA SEMÁNTICO", 18);
+
+    std::function<std::string(const Formula::Ptr&)> logicLabel =
+        [&](const Formula::Ptr& node) {
+            if (node->kind() == FormulaKind::Atom) {
+                const auto label = diagramLabels.find(node->atomName());
+                return label == diagramLabels.end() ? node->atomName() : label->second;
+            }
+            if (node->kind() == FormulaKind::Not)
+                return "¬(" + logicLabel(node->left()) + ")";
+            const char* operation = node->kind() == FormulaKind::And ? " ∧ "
+                                  : node->kind() == FormulaKind::Or ? " ∨ "
+                                  : node->kind() == FormulaKind::Implies ? " → "
+                                  : " ↔ ";
+            return "(" + logicLabel(node->left()) + operation +
+                   logicLabel(node->right()) + ")";
+        };
+
+    int top = 72;
+    for (std::size_t ruleIndex = 0; ruleIndex < diagramFormulas.size(); ++ruleIndex) {
+        const Formula::Ptr& root = diagramFormulas[ruleIndex];
+        std::vector<Formula::Ptr> leaves;
+        std::function<void(const Formula::Ptr&)> collect =
+            [&](const Formula::Ptr& node) {
+                if (node->kind() == FormulaKind::Atom) {
+                    leaves.push_back(node);
+                    return;
+                }
+                collect(node->left());
+                if (node->right()) collect(node->right());
+            };
+        collect(root);
+        const int width = std::max(1, static_cast<int>(area.right) - 100);
+        const int gap = width / static_cast<int>(std::max<std::size_t>(1, leaves.size()));
+        std::map<const Formula*, POINT> positions;
+        int leafIndex = 0;
+        std::function<POINT(const Formula::Ptr&, int)> place =
+            [&](const Formula::Ptr& node, int depth) -> POINT {
+                if (node->kind() == FormulaKind::Atom) {
+                    POINT point{50 + leafIndex++ * gap + gap / 2, top + depth * 92};
+                    positions[node.get()] = point;
+                    return point;
+                }
+                POINT left = place(node->left(), depth + 1);
+                POINT right = node->right() ? place(node->right(), depth + 1) : left;
+                POINT point{(left.x + right.x) / 2, top + depth * 92};
+                positions[node.get()] = point;
+                return point;
+            };
+        place(root, 0);
+
+        HPEN connector = CreatePen(PS_SOLID, 2, RGB(55, 55, 55));
+        HGDIOBJ oldPen = SelectObject(dc, connector);
+        std::function<void(const Formula::Ptr&)> lines =
+            [&](const Formula::Ptr& node) {
+                if (node->kind() == FormulaKind::Atom) return;
+                POINT parent = positions[node.get()];
+                POINT left = positions[node->left().get()];
+                MoveToEx(dc, parent.x, parent.y + 25, nullptr);
+                LineTo(dc, left.x, left.y - 25);
+                lines(node->left());
+                if (node->right()) {
+                    POINT right = positions[node->right().get()];
+                    MoveToEx(dc, parent.x, parent.y + 25, nullptr);
+                    LineTo(dc, right.x, right.y - 25);
+                    lines(node->right());
+                }
+            };
+        lines(root);
+        SelectObject(dc, oldPen);
+        DeleteObject(connector);
+
+        std::function<void(const Formula::Ptr&)> boxes =
+            [&](const Formula::Ptr& node) {
+                POINT center = positions[node.get()];
+                RECT box{center.x - 62, center.y - 25, center.x + 62, center.y + 25};
+                const bool atom = node->kind() == FormulaKind::Atom;
+                HBRUSH fill = CreateSolidBrush(atom ? RGB(253, 236, 233)
+                                                     : RGB(255, 164, 154));
+                HPEN border = CreatePen(PS_SOLID, 1, RGB(35, 35, 35));
+                HGDIOBJ oldBrush = SelectObject(dc, fill);
+                HGDIOBJ oldNodePen = SelectObject(dc, border);
+                RoundRect(dc, box.left, box.top, box.right, box.bottom, 10, 10);
+                SelectObject(dc, oldNodePen);
+                SelectObject(dc, oldBrush);
+                DeleteObject(border);
+                DeleteObject(fill);
+                std::string label = logicLabel(node);
+                std::wstring text = toWide(label);
+                SelectObject(dc, smallFont);
+                SetTextColor(dc, RGB(35, 35, 35));
+                DrawTextW(dc, text.c_str(), -1, &box,
+                          DT_CENTER | DT_VCENTER | DT_WORDBREAK | DT_END_ELLIPSIS);
+                if (node->kind() != FormulaKind::Atom) {
+                    boxes(node->left());
+                    if (node->right()) boxes(node->right());
+                }
+            };
+        boxes(root);
+        top += 270;
+    }
 }
 
 LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -185,13 +566,77 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
     case WM_CREATE:
         createControls(window);
         return 0;
+    case WM_SIZE:
+        if (treeResultMode) {
+            RECT clientArea{};
+            GetClientRect(window, &clientArea);
+            HWND resultControl = GetDlgItem(window, ResultId);
+            MoveWindow(resultControl, 44, 447,
+                       std::max(400, static_cast<int>(clientArea.right) - 88),
+                       std::max(200, static_cast<int>(clientArea.bottom) - 490),
+                       TRUE);
+        }
+        return 0;
+    case WM_PAINT:
+        if (diagramMode) {
+            PAINTSTRUCT paint{};
+            HDC dc = BeginPaint(window, &paint);
+            RECT area{};
+            GetClientRect(window, &area);
+            paintDiagram(dc, area);
+            EndPaint(window, &paint);
+            return 0;
+        }
+        break;
     case WM_COMMAND:
-        if (LOWORD(wParam) == AnalyzeId) analyze(window);
+        if (LOWORD(wParam) == AnalyzeId) {
+            analyze(window);
+            if (!lastResult.empty()) showResultView(window, lastResult, false);
+        }
+        if (LOWORD(wParam) == AtomsViewId) {
+            analyze(window);
+            if (!atomsResult.empty()) showResultView(window, atomsResult, false);
+        }
+        if (LOWORD(wParam) == RulesViewId) {
+            analyze(window);
+            if (!rulesResult.empty()) showResultView(window, rulesResult, false);
+        }
+        if (LOWORD(wParam) == ShowDiagramId) {
+            if (diagramFormulas.empty()) {
+                showError(window, "Primero analiza las proposiciones.");
+            } else {
+                showResultView(window, semanticTreeResult, true);
+                SetWindowTextW(GetDlgItem(window, StatusId),
+                               L"Arbol semantico mostrado");
+            }
+        }
+        if (LOWORD(wParam) == BackDiagramId) {
+            setDiagramView(window, false);
+            SetWindowTextW(GetDlgItem(window, StatusId), L"Resultado listo");
+        }
         if (LOWORD(wParam) == ClearId) {
             SetWindowTextW(GetDlgItem(window, InputId), L"");
             SetWindowTextW(GetDlgItem(window, ResultId), L"Tu resultado aparecerá aquí.");
+            lastResult.clear();
+            semanticTreeResult.clear();
+            treeResultMode = false;
+            SetWindowTextW(GetDlgItem(window, AnalyzeId), L"MODELO");
+            SetWindowTextW(GetDlgItem(window, ShowDiagramId), L"ARBOL SEMANTICO");
+            atomsResult.clear();
+            rulesResult.clear();
+            ShowWindow(GetDlgItem(window, ResultId), SW_SHOW);
             SetWindowTextW(GetDlgItem(window, AtomsId), L"Sin análisis");
+            MoveWindow(GetDlgItem(window, ResultId), 44, 447, 1020, 155, TRUE);
+            ShowWindow(GetDlgItem(window, AtomsId), SW_SHOW);
             SetWindowTextW(GetDlgItem(window, StatusId), L"Listo para analizar");
+            diagramFormulas.clear();
+            diagramOriginals.clear();
+            diagramLabels.clear();
+            setDiagramView(window, false);
+            if (diagramWindow) {
+                DestroyWindow(diagramWindow);
+                diagramWindow = nullptr;
+            }
         }
         return 0;
     case WM_CTLCOLORSTATIC:
@@ -204,12 +649,22 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
         return reinterpret_cast<LRESULT>(GetStockObject(WHITE_BRUSH));
     case WM_DRAWITEM: {
         const auto* draw = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
-        if (draw->CtlID != AnalyzeId) break;
-        FillRect(draw->hDC, &draw->rcItem, CreateSolidBrush(RGB(9, 27, 40)));
+        if (draw->CtlID != AnalyzeId && draw->CtlID != ShowDiagramId &&
+            draw->CtlID != AtomsViewId && draw->CtlID != RulesViewId)
+            break;
+        HBRUSH buttonBrush = CreateSolidBrush(RGB(9, 27, 40));
+        FillRect(draw->hDC, &draw->rcItem, buttonBrush);
+        DeleteObject(buttonBrush);
         SetTextColor(draw->hDC, RGB(255, 255, 255));
         SetBkMode(draw->hDC, TRANSPARENT);
         RECT buttonRect = draw->rcItem;
-        DrawTextW(draw->hDC, L"ANALIZAR PROPOSICIONES", -1, &buttonRect,
+        const wchar_t* label = draw->CtlID == AnalyzeId
+                                   ? L"MODELO"
+                                   : draw->CtlID == ShowDiagramId
+                                         ? L"ARBOL SEMANTICO"
+                                         : draw->CtlID == AtomsViewId ? L"ATOMOS"
+                                                                       : L"REGLAS";
+        DrawTextW(draw->hDC, label, -1, &buttonRect,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         return TRUE;
     }
@@ -217,6 +672,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
         DeleteObject(bodyFont);
         DeleteObject(headingFont);
         DeleteObject(smallFont);
+        DeleteObject(treeFont);
         DeleteObject(backgroundBrush);
         PostQuitMessage(0);
         return 0;
@@ -239,9 +695,23 @@ int main() {
     smallFont = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                             DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    treeFont = CreateFontW(-14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                            CLEARTYPE_QUALITY, FIXED_PITCH | FF_DONTCARE, L"Consolas");
     backgroundBrush = CreateSolidBrush(RGB(247, 250, 250));
 
     const wchar_t className[] = L"LogicLabWindow";
+    const wchar_t diagramClassName[] = L"LogicTreeDiagram";
+    WNDCLASSW diagramClass{};
+    diagramClass.hInstance = GetModuleHandleW(nullptr);
+    diagramClass.lpfnWndProc = diagramProcedure;
+    diagramClass.lpszClassName = diagramClassName;
+    diagramClass.style = CS_HREDRAW | CS_VREDRAW;
+    diagramClass.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
+    diagramClass.hbrBackground =
+        reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
+    RegisterClassW(&diagramClass);
+
     WNDCLASSW windowClass{};
     windowClass.hInstance = GetModuleHandleW(nullptr);
     windowClass.lpfnWndProc = windowProcedure;
@@ -252,8 +722,9 @@ int main() {
 
     HWND window = CreateWindowExW(
         0, className, L"LogicLab - Motor de Inferencia",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-        CW_USEDEFAULT, CW_USEDEFAULT, 810, 900, nullptr, nullptr,
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX |
+            WS_MAXIMIZEBOX | WS_THICKFRAME,
+        CW_USEDEFAULT, CW_USEDEFAULT, 1140, 1000, nullptr, nullptr,
         windowClass.hInstance, nullptr);
     if (!window) return 1;
     SendMessageW(window, WM_SETFONT, reinterpret_cast<WPARAM>(bodyFont), TRUE);

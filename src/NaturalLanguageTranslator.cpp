@@ -117,6 +117,7 @@ std::string NaturalLanguageTranslator::translate(const std::string& sentence) {
     std::string symbolic;
     std::string fragment;
     bool negateNext = false;
+    bool negateFragment = false;
     auto flushFragment = [&]() {
         const std::string phrase = trim(fragment);
         fragment.clear();
@@ -127,9 +128,10 @@ std::string NaturalLanguageTranslator::translate(const std::string& sentence) {
             it = atoms_.emplace(phrase, atom).first;
             labels_[atom] = phrase;
         }
-        if (negateNext) {
+        if (negateNext || negateFragment) {
             symbolic += "! ";
             negateNext = false;
+            negateFragment = false;
         }
         symbolic += it->second + " ";
     };
@@ -138,8 +140,11 @@ std::string NaturalLanguageTranslator::translate(const std::string& sentence) {
     std::string word;
     while (input >> word) {
         if (word == "no" || word == "nunca" || word == "!") {
-            if (!fragment.empty()) flushFragment();
-            negateNext = true;
+            if (fragment.empty()) {
+                negateNext = true;
+            } else {
+                negateFragment = true;
+            }
         } else if (word == "&" || word == "|" || word == "->" || word == "<>" ||
                    word == "(" || word == ")") {
             if (!fragment.empty()) flushFragment();
